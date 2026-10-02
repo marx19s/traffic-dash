@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Traffic Dash</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
+<style>
+  :root{
+    --accent:#ffd23f;
+    --accent2:#00d9ff;
+    --danger:#ff3b5c;
+    --bg:#0b0e14;
+    --panel:rgba(15,18,28,0.92);
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent; user-select:none;}
+  html,body{margin:0;padding:0;width:100%;height:100%;background:var(--bg);overflow:hidden;
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display",Helvetica,Arial,sans-serif;
+    touch-action:none;}
+  #gameCanvas{position:fixed;top:0;left:0;width:100%;height:100%;display:block;}
+
+  .screen{
+    position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    background:radial-gradient(circle at 50% 20%, rgba(255,210,63,0.08), transparent 60%), var(--bg);
+    color:#fff; text-align:center; z-index:20;
+  }
+  .hidden{display:none !important;}
+
+  h1{
+    font-size:34px; margin:0 0 4px; letter-spacing:1px;
+    background:linear-gradient(90deg,var(--accent),var(--accent2));
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    font-weight:800;
+  }
+  .subtitle{color:#8b93a7; font-size:13px; margin-bottom:26px; max-width:280px; line-height:1.5;}
+
+  .diffRow{display:flex; gap:10px; margin-bottom:22px;}
+  .diffBtn{
+    padding:10px 16px; border-radius:12px; border:2px solid #2a3040; background:#141822;
+    color:#c7cdda; font-size:14px; font-weight:600;
+  }
+  .diffBtn.active{border-color:var(--accent); color:var(--accent); background:#1c1a10;}
+
+  .bigBtn{
+    padding:16px 42px; border-radius:16px; border:none;
+    background:linear-gradient(135deg,var(--accent),#ff9d3f); color:#1a1200;
+    font-size:18px; font-weight:800; letter-spacing:0.5px;
+    box-shadow:0 8px 20px rgba(255,180,60,0.35);
+    margin-bottom:14px;
+  }
+  .bigBtn:active{transform:scale(0.97);}
+  .ghostBtn{
+    padding:10px 22px;border-radius:12px;border:1px solid #3a4155;background:transparent;color:#9aa3b8;font-size:13px;
+  }
+
+  .hint{font-size:11px; color:#5c6478; margin-top:18px; max-width:280px; line-height:1.5;}
+
+  /* HUD */
+  #hud{
+    position:fixed; top:0; left:0; right:0; z-index:10; pointer-events:none;
+    padding:calc(env(safe-area-inset-top) + 10px) 16px 0;
+    display:flex; justify-content:space-between; align-items:flex-start;
+  }
+  .scoreBox{
+    pointer-events:auto; background:var(--panel); border:1px solid #262c3d;
+    border-radius:14px; padding:8px 16px; font-weight:700; font-size:20px; color:var(--accent);
+  }
+  .scoreLabel{font-size:9px; color:#8b93a7; font-weight:600; letter-spacing:1px; display:block; margin-bottom:2px;}
+  #pauseBtn{
+    pointer-events:auto; width:42px;height:42px;border-radius:12px;border:1px solid #262c3d;
+    background:var(--panel); color:#fff; font-size:16px;
+  }
+
+  /* Brake */
+  #brakeBtn{
+    position:fixed; z-index:10; right:calc(env(safe-area-inset-right) + 22px);
+    bottom:calc(env(safe-area-inset-bottom) + 30px);
+    width:92px; height:92px; border-radius:50%;
+    background:radial-gradient(circle at 35% 30%, #ff6b7f, var(--danger));
+    border:3px solid rgba(255,255,255,0.25);
+    color:#fff; font-weight:800; font-size:13px; letter-spacing:0.5px;
+    box-shadow:0 6px 18px rgba(255,59,92,0.45);
+    display:flex; align-items:center; justify-content:center;
+  }
+  #brakeBtn.pressed{transform:scale(0.9); box-shadow:0 2px 8px rgba(255,59,92,0.5);}
+
+  #finalScore{font-size:52px; font-weight:800; color:var(--accent); margin:6px 0 0;}
+  #highScoreLine{color:#8b93a7; font-size:13px; margin-bottom:26px;}
+</style>
+</head>
+<body>
+
+<canvas id="gameCanvas"></canvas>
+
+<!-- MENU -->
+<div id="menuScreen" class="screen">
+  <h1>TRAFFIC DASH</h1>
+  <div class="subtitle">Tilt your phone left or right to snap into the next lane, dodge traffic, and rack up distance points. Works fully offline.</div>
+
+  <div class="diffRow" id="diffRow">
+    <button class="diffBtn" data-d="easy">Easy</button>
+    <button class="diffBtn active" data-d="medium">Medium</button>
+    <button class="diffBtn" data-d="hard">Hard</button>
+  </div>
+
+  <button class="bigBtn" id="startBtn">▶ START DRIVING</button>
+  <button class="ghostBtn" id="recalBtnMenu">Steering feels off? Recalibrate</button>
+
+  <div class="hint" id="menuHint">Hold the phone upright the way you're playing now, then tip it left or right and back to center to change lanes — like a switch, not a steering wheel.</div>
+</div>
+
+<!-- HUD -->
+<div id="hud" class="hidden">
+  <div class="scoreBox"><span class="scoreLabel">SCORE</span><span id="scoreVal">0</span></div>
+  <button id="pauseBtn">❚❚</button>
+</div>
+
+<button id="brakeBtn" class="hidden">BRAKE</button>
+
+<!-- PAUSE -->
+<div id="pauseScreen" class="screen hidden">
+  <h1 style="font-size:28px;">PAUSED</h1>
+  <button class="bigBtn" id="resumeBtn">▶ RESUME</button>
+  <button class="ghostBtn" id="recalBtnPause">Recalibrate tilt</button>
+  <button class="ghostBtn" id="quitBtn">Quit to menu</button>
+</div>
+
+<!-- GAME OVER -->
+<div id="overScreen" class="screen hidden">
+  <div class="subtitle" style="margin-bottom:0;">CRASHED!</div>
+  <div id="finalScore">0</div>
+  <div id="highScoreLine">Best: 0</div>
+  <button class="bigBtn" id="retryBtn">↻ RETRY</button>
+  <button class="ghostBtn" id="menuBtn">Main menu</button>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---------- Canvas setup ----------
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+  let W = 0, H = 0, DPR = 1;
+  function resize(){
+    DPR = window.devicePixelRatio || 1;
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = W * DPR; canvas.height = H * DPR;
+    canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // ---------- DOM refs ----------
+  const menuScreen = document.getElementById('menuScreen');
+  const pauseScreen = document.getElementById('pauseScreen');
+  const overScreen = document.getElementById('overScreen');
+  const hud = document.getElementById('hud');
+  const brakeBtn = document.getElementById('brakeBtn');
+  const scoreVal = document.getElementById('scoreVal');
+  const finalScore = document.getElementById('finalScore');
+  const highScoreLine = document.getElementById('highScoreLine');
+  const diffRow = document.getElementById('diffRow');
+
+  // ---------- Difficulty ----------
+  const DIFFICULTIES = {
+    easy:   { spawnMs: 1150, enemySpeed: 230, speedGrowth: 0.010, laneCount: 3 },
+    medium: { spawnMs: 850,  enemySpeed: 300, speedGrowth: 0.016, laneCount: 4 },
+    hard:   { spawnMs: 620,  enemySpeed: 380, speedGrowth: 0.022, laneCount: 4 }
+  };
+  let difficulty = 'medium';
+  diffRow.addEventListener('click', (e)=>{
+    const btn = e.target.closest('.diffBtn');
+    if(!btn) return;
+    difficulty = btn.dataset.d;
+    [...diffRow.children].forEach(b=>b.classList.toggle('active', b===btn));
+  });
+
+  // ---------- High score ----------
+  const HS_KEY = 'trafficDashHighScore';
+  function getHighScore(){ return parseInt(localStorage.getItem(HS_KEY) || '0', 10); }
+  function setHighScore(v){ localStorage.setItem(HS_KEY, String(v)); }
+
+  // ---------- Tilt input (discrete lane-snap, via accelerometer gravity vector) ----------
+  // We read accelerationIncludingGravity.x instead of orientation "gamma" because
+  // gamma becomes unreliable ("gimbal lock") once the phone is held upright/vertical —
+  // exactly the position this game is played in. The gravity vector on the device's
+  // left-right axis stays accurate at any holding angle, flat or vertical.
+  const TILT_TRIGGER = 2.6;   // m/s^2 of sideways gravity to trigger a lane snap
+  const TILT_RESET = 0.9;     // must return this close to neutral before next snap
+  let tiltBaseX = null;
+  let tiltArmed = true;
+  let tiltAvailable = false;
+
+  function handleMotion(e){
+    const g = e.accelerationIncludingGravity;
+    if (!g || g.x === null || g.x === undefined) return;
+    if (tiltBaseX === null) tiltBaseX = g.x;
+    const delta = g.x - tiltBaseX;
+
+    if (tiltArmed && Math.abs(delta) > TILT_TRIGGER){
+      shiftLane(delta > 0 ? -1 : 1);
+      tiltArmed = false;
+    } else if (!tiltArmed && Math.abs(delta) < TILT_RESET){
+      tiltArmed = true;
+    }
+  }
+
+  function enableTilt(){
+    if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function'){
+      DeviceMotionEvent.requestPermission().then(state=>{
+        if (state === 'granted'){
+          tiltAvailable = true;
+          window.addEventListener('devicemotion', handleMotion);
+        } else {
+          tiltAvailable = false;
+        }
+      }).catch(()=>{ tiltAvailable = false; });
+    } else if (typeof DeviceMotionEvent !== 'undefined') {
+      tiltAvailable = true;
+      window.addEventListener('devicemotion', handleMotion);
+    } else {
+      tiltAvailable = false;
+    }
+  }
+
+  function recalibrate(){ tiltBaseX = null; tiltArmed = true; }
+  document.getElementById('recalBtnMenu').addEventListener('click', recalibrate);
+  document.getElementById('recalBtnPause').addEventListener('click', recalibrate);
+
+  // Touch steering zones (always active as a reliable fallback)
+  function bindHold(el, onDown, onUp){
+    el.addEventListener('touchstart', (ev)=>{ ev.preventDefault(); onDown(); }, {passive:false});
+    el.addEventListener('touchend', (ev)=>{ ev.preventDefault(); onUp(); }, {passive:false});
+    el.addEventListener('touchcancel', onUp);
+    el.addEventListener('mousedown', onDown);
+    el.addEventListener('mouseup', onUp);
+    el.addEventListener('mouseleave', onUp);
+  }
+  window.addEventListener('keydown', (e)=>{
+    if(e.key==='ArrowLeft') shiftLane(-1);
+    if(e.key==='ArrowRight') shiftLane(1);
+  });
+
+  // Brake
+  let braking = false;
+  bindHold(brakeBtn,
+    ()=>{ braking = true; brakeBtn.classList.add('pressed'); },
+    ()=>{ braking = false; brakeBtn.classList.remove('pressed'); }
+  );
+
+  // ---------- Game state ----------
+  let state = 'menu'; // menu | playing | paused | over
+  let road, player, enemies, score, elapsed, spawnTimer, curEnemySpeed, curSpawnMs;
+  let lastTime = 0;
+
+  function roadBounds(){
+    const margin = W * 0.10;
+    return { left: margin, right: W - margin, width: W - margin*2 };
+  }
+
+  function resetGame(){
+    road = roadBounds();
+    const cfg = DIFFICULTIES[difficulty];
+    const lanes = laneCenters(cfg);
+    const startLane = Math.floor(cfg.laneCount/2);
+    player = {
+      w: Math.min(56, road.width/ (cfg.laneCount) * 0.62),
+      h: 0,
+      laneIndex: startLane,
+      x: lanes[startLane],
+      y: H - 150
+    };
+    player.targetX = player.x;
+    player.h = player.w * 1.8;
+    enemies = [];
+    score = 0;
+    elapsed = 0;
+    spawnTimer = 0;
+    curEnemySpeed = cfg.enemySpeed;
+    curSpawnMs = cfg.spawnMs;
+    tiltBaseX = null;
+    tiltArmed = true;
+    braking = false;
+    brakeBtn.classList.remove('pressed');
+  }
+
+  function laneCenters(cfg){
+    const r = roadBounds();
+    const laneW = r.width / cfg.laneCount;
+    const arr = [];
+    for(let i=0;i<cfg.laneCount;i++) arr.push(r.left + laneW*(i+0.5));
+    return arr;
+  }
+
+  function shiftLane(dir){
+    if (state !== 'playing' || !player) return;
+    const cfg = DIFFICULTIES[difficulty];
+    const lanes = laneCenters(cfg);
+    let idx = player.laneIndex + dir;
+    idx = Math.max(0, Math.min(cfg.laneCount - 1, idx));
+    player.laneIndex = idx;
+    player.targetX = lanes[idx];
+  }
+
+  function spawnEnemy(){
+    const cfg = DIFFICULTIES[difficulty];
+    const lanes = laneCenters(cfg);
+    // avoid stacking two enemies in the same lane too close together
+    const lane = lanes[Math.floor(Math.random()*lanes.length)];
+    const w = Math.min(56, (road.width/cfg.laneCount) * 0.62);
+    const h = w * 1.8;
+    const colors = ['#4dd0e1','#7c8cff','#ff8a5c','#9be15d','#ffd23f','#e07cff'];
+    enemies.push({
+      x: lane, y: -h - Math.random()*80, w, h,
+      color: colors[Math.floor(Math.random()*colors.length)],
+      passed: false
+    });
+  }
+
+  function rectsOverlap(a,b){
+    return Math.abs(a.x-b.x) < (a.w+b.w)/2 * 0.82 &&
+           Math.abs(a.y-b.y) < (a.h+b.h)/2 * 0.82;
+  }
+
+  function update(dt){
+    if (state !== 'playing') return;
+    const cfg = DIFFICULTIES[difficulty];
+    elapsed += dt;
+
+    // difficulty ramps over time
+    curEnemySpeed = cfg.enemySpeed + elapsed * cfg.speedGrowth * 40;
+    curSpawnMs = Math.max(320, cfg.spawnMs - elapsed * 6);
+
+    const speedMult = braking ? 0.42 : 1;
+
+    // smooth glide toward the snapped target lane
+    const smoothing = 1 - Math.pow(0.001, dt);
+    player.x += (player.targetX - player.x) * smoothing;
+
+    // spawn
+    spawnTimer += dt*1000;
+    if (spawnTimer >= curSpawnMs){
+      spawnTimer = 0;
+      spawnEnemy();
+    }
+
+    // move enemies + collisions + passing score
+    for (let i = enemies.length-1; i >= 0; i--){
+      const en = enemies[i];
+      en.y += curEnemySpeed * speedMult * dt;
+
+      if (!en.passed && en.y > player.y + player.h/2){
+        en.passed = true;
+        score += 5;
+      }
+      if (rectsOverlap(player, en)){
+        return gameOver();
+      }
+      if (en.y > H + 100) enemies.splice(i,1);
+    }
+
+    // distance score
+    score += dt * 12 * speedMult;
+    scoreVal.textContent = Math.floor(score);
+  }
+
+  function drawRoundedRect(x,y,w,h,r){
+    ctx.beginPath();
+    ctx.moveTo(x-w/2+r, y-h/2);
+    ctx.arcTo(x+w/2, y-h/2, x+w/2, y+h/2, r);
+    ctx.arcTo(x+w/2, y+h/2, x-w/2, y+h/2, r);
+    ctx.arcTo(x-w/2, y+h/2, x-w/2, y-h/2, r);
+    ctx.arcTo(x-w/2, y-h/2, x+w/2, y-h/2, r);
+    ctx.closePath();
+  }
+
+  function drawCar(x,y,w,h,bodyColor,windowColor){
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    drawRoundedRect(x, y+h*0.06, w*0.92, h*0.95, w*0.22);
+    ctx.fill();
+
+    ctx.fillStyle = bodyColor;
+    drawRoundedRect(x, y, w, h, w*0.22);
+    ctx.fill();
+
+    ctx.fillStyle = windowColor;
+    drawRoundedRect(x, y - h*0.14, w*0.66, h*0.32, w*0.14);
+    ctx.fill();
+    drawRoundedRect(x, y + h*0.22, w*0.66, h*0.22, w*0.12);
+    ctx.fill();
+
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.fillRect(x-w*0.42, y-h*0.46, w*0.16, h*0.06);
+    ctx.fillRect(x+w*0.26, y-h*0.46, w*0.16, h*0.06);
+
+    ctx.fillStyle = '#1a1a1a';
+    ctx.fillRect(x-w*0.5-2, y-h*0.30, 4, h*0.22);
+    ctx.fillRect(x+w*0.5-2, y-h*0.30, 4, h*0.22);
+    ctx.fillRect(x-w*0.5-2, y+h*0.10, 4, h*0.22);
+    ctx.fillRect(x+w*0.5-2, y+h*0.10, 4, h*0.22);
+    ctx.restore();
+  }
+
+  let dashOffset = 0;
+  function draw(){
+    ctx.clearRect(0,0,W,H);
+
+    // sky/background
+    ctx.fillStyle = '#0b0e14';
+    ctx.fillRect(0,0,W,H);
+
+    const r = roadBounds();
+    // pavement
+    ctx.fillStyle = '#141822';
+    ctx.fillRect(0,0,W,H);
+    // road
+    ctx.fillStyle = '#20242f';
+    ctx.fillRect(r.left, 0, r.width, H);
+    // edge lines
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+    ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(r.left,0); ctx.lineTo(r.left,H); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(r.right,0); ctx.lineTo(r.right,H); ctx.stroke();
+
+    // lane dashes
+    if (state === 'playing' || state === 'paused') {
+      const cfg = DIFFICULTIES[difficulty];
+      const laneW = r.width / cfg.laneCount;
+      ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+      ctx.lineWidth = 3;
+      ctx.setLineDash([26,22]);
+      for (let i=1;i<cfg.laneCount;i++){
+        const lx = r.left + laneW*i;
+        ctx.beginPath();
+        ctx.moveTo(lx, -dashOffset);
+        ctx.lineTo(lx, H);
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+    }
+
+    if (state === 'playing' || state === 'paused'){
+      enemies.forEach(en => drawCar(en.x, en.y, en.w, en.h, en.color, '#0d1420'));
+      drawCar(player.x, player.y, player.w, player.h, '#ffd23f', '#101318');
+    }
+  }
+
+  function loop(ts){
+    if (!lastTime) lastTime = ts;
+    let dt = (ts - lastTime) / 1000;
+    lastTime = ts;
+    if (dt > 0.05) dt = 0.05; // clamp big jumps (tab switch etc.)
+    dashOffset = (dashOffset + (state==='playing' ? curEnemySpeed*dt : 0)) % 48;
+    update(dt);
+    draw();
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+
+  // ---------- Screen transitions ----------
+  function showScreen(el){
+    [menuScreen,pauseScreen,overScreen].forEach(s=>s.classList.add('hidden'));
+    el.classList.remove('hidden');
+  }
+
+  function startGame(){
+    resetGame();
+    state = 'playing';
+    showScreen(menuScreen); menuScreen.classList.add('hidden');
+    hud.classList.remove('hidden');
+    brakeBtn.classList.remove('hidden');
+    scoreVal.textContent = '0';
+  }
+
+  function gameOver(){
+    state = 'over';
+    const s = Math.floor(score);
+    const hs = Math.max(s, getHighScore());
+    setHighScore(hs);
+    finalScore.textContent = s;
+    highScoreLine.textContent = 'Best: ' + hs;
+    hud.classList.add('hidden');
+    brakeBtn.classList.add('hidden');
+    showScreen(overScreen);
+  }
+
+  document.getElementById('startBtn').addEventListener('click', ()=>{
+    enableTilt();
+    startGame();
+  });
+  document.getElementById('retryBtn').addEventListener('click', startGame);
+  document.getElementById('menuBtn').addEventListener('click', ()=>{
+    state = 'menu';
+    showScreen(menuScreen);
+  });
+  document.getElementById('pauseBtn').addEventListener('click', ()=>{
+    if (state !== 'playing') return;
+    state = 'paused';
+    showScreen(pauseScreen);
+  });
+  document.getElementById('resumeBtn').addEventListener('click', ()=>{
+    state = 'playing';
+    lastTime = 0;
+    showScreen(pauseScreen); pauseScreen.classList.add('hidden');
+  });
+  document.getElementById('quitBtn').addEventListener('click', ()=>{
+    state = 'menu';
+    hud.classList.add('hidden');
+    brakeBtn.classList.add('hidden');
+    showScreen(menuScreen);
+  });
+
+  // initial best score display prep
+  document.addEventListener('visibilitychange', ()=>{
+    if (document.hidden && state === 'playing'){
+      state = 'paused';
+      showScreen(pauseScreen);
+    }
+  });
+
+})();
+</script>
+</body>
+</html>
